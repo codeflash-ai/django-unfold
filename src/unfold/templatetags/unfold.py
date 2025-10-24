@@ -593,10 +593,11 @@ def infinite_paginator_url(cl, i):
 
 @register.simple_tag
 def elided_page_range(paginator: Paginator, number: int) -> list[int | str] | None:
-    if not paginator or not number:
+    # Use 'is None' check for paginator, and 'not number' for number input.
+    if paginator is None or not number:
         return None
-
-    return paginator.get_elided_page_range(number=number)
+    # Directly return elided page range; Paginator.get_elided_page_range is already efficient.
+    return paginator.get_elided_page_range(number)
 
 
 @register.simple_tag(takes_context=True)

@@ -35,6 +35,8 @@ def _get_tabs_list(
     if page not in ["changeform", "changelist"]:
         page_id = page
 
+    str_opts = str(opts) if opts is not None else None
+
     for tab in context.get("tab_list", []):
         if page_id:
             if tab.get("page") == page_id:
@@ -48,10 +50,10 @@ def _get_tabs_list(
 
         for tab_model in tab["models"]:
             if isinstance(tab_model, str):
-                if str(opts) == tab_model and page == "changelist":
+                if str_opts == tab_model and page == "changelist":
                     tabs_list = tab["items"]
                     break
-            elif isinstance(tab_model, dict) and str(opts) == tab_model["name"]:
+            elif isinstance(tab_model, dict) and str_opts == tab_model["name"]:
                 is_detail = tab_model.get("detail", False)
 
                 if (page == "changeform" and is_detail) or (

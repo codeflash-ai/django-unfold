@@ -604,18 +604,34 @@ def querystring_params(
     context: RequestContext, query_key: str, query_value: str
 ) -> str:
     request = context.get("request")
-    result = QueryDict(mutable=True)
+    get_params = request.GET
 
-    for key, values in request.GET.lists():
-        if key == query_key:
-            continue
+    # Pre-allocate a list of (key, value) tuples except for the query_key
+    items = [
+        (key, value)
+        for key, values in get_params.lists()
+        if key != query_key
+        for value in values
+    ]
 
-        for value in values:
-            result[key] = value
+    # Append the new/updated key-value pair
+    items.append((query_key, query_value))
 
-    result[query_key] = query_value
+    # Use QueryDict.fromkeys to build the QueryDict efficiently
+    # QueryDict can be constructed from a list of tuples with urlencode
+    # Avoid using QueryDict.__setitem__ which is expensive
+    # Instead, build a raw bytes string and pass to QueryDict
 
-    return result.urlencode()
+    # Compose an encoded string directly
+    # Use Django's internal QueryDict._encode_pairs for maximum efficiency is not recommended
+    # Instead, use standard library's urlencode
+    from urllib.parse import urlencode
+
+    # Use doseq=True so repeated keys are handled correctly
+    # This encodes a sequence of two-value tuples correctly
+    query_string = urlencode(items, doseq=True)
+
+    return query_string
 
 
 @register.simple_tag(name="unfold_querystring", takes_context=True)

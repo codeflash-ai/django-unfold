@@ -90,18 +90,19 @@ def get_config(settings_name=None):
         settings_name = "UNFOLD"
 
     def merge_dicts(dict1: dict[str, Any], dict2: dict[str, Any]) -> dict[str, Any]:
+        # Fast-path: if dict2 is empty, avoid copy and recursion
+        if not dict2:
+            return dict1.copy()
         result = dict1.copy()
-
         for key, value in dict2.items():
-            if (
-                key in result
-                and isinstance(result[key], dict)
-                and isinstance(value, dict)
-            ):
-                result[key] = merge_dicts(result[key], value)
+            v1 = result.get(key)
+            # Short-circuit before recursion for performance
+            if isinstance(v1, dict) and isinstance(value, dict):
+                result[key] = merge_dicts(v1, value)
             else:
                 result[key] = value
-
         return result
 
-    return merge_dicts(CONFIG_DEFAULTS, getattr(settings, settings_name, {}))
+    config_defaults = CONFIG_DEFAULTS
+    config_override = getattr(settings, settings_name, {})
+    return merge_dicts(config_defaults, config_override)

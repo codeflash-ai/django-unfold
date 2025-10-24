@@ -187,34 +187,41 @@ def do_capture(parser: Parser, token: Token) -> CaptureNode:
         <meta name="twitter:title" content="{% block twitter-title %}{{ meta_title }}{% endblock %}" />
     """
     bits = token.split_contents()
-
-    # tokens
-    t_as = "as"
-    t_silent = "silent"
-    var = "capture"
+    num_bits = len(bits)
     silent = False
 
-    num_bits = len(bits)
-    if len(bits) > 4:
+    if num_bits > 4:
         raise TemplateSyntaxError(
             "'capture' node supports '[as variable] [silent]' parameters."
         )
-    elif num_bits == 4:
+    if num_bits == 4:
+        # {% capture as varname silent %}
         t_name, t_as, var, t_silent = bits
+        if t_as != "as" or t_silent != "silent":
+            raise TemplateSyntaxError(
+                "'capture' node expects 'as variable' or 'silent' syntax."
+            )
         silent = True
     elif num_bits == 3:
+        # {% capture as varname %}
         t_name, t_as, var = bits
+        if t_as != "as":
+            raise TemplateSyntaxError(
+                "'capture' node expects 'as variable' or 'silent' syntax."
+            )
     elif num_bits == 2:
+        # {% capture silent %}
         t_name, t_silent = bits
+        if t_silent != "silent":
+            raise TemplateSyntaxError(
+                "'capture' node expects 'as variable' or 'silent' syntax."
+            )
+        var = "capture"
         silent = True
     else:
+        # {% capture %}
         var = "capture"
         silent = False
-
-    if t_silent != "silent" or t_as != "as":
-        raise TemplateSyntaxError(
-            "'capture' node expects 'as variable' or 'silent' syntax."
-        )
 
     nodelist = parser.parse(("endcapture",))
     parser.delete_first_token()

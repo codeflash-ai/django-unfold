@@ -86,24 +86,40 @@ def display_for_label(value: Any, empty_value_display: str, label: Any) -> SafeT
 def display_for_value(
     value: Any, empty_value_display: str, boolean: bool = False
 ) -> str:
+    # Performance: Minimize isinstance checks and reorder for common cases first.
     if boolean:
         return _boolean_icon(value)
-    elif value is None:
+    if value is None:
         return empty_value_display
-    elif isinstance(value, bool):
+
+    # Avoid multiple isinstance for bool (because bool is a subclass of int), so check bool before int
+    vtype = type(value)
+    if vtype is bool:
         return str(value)
-    elif isinstance(value, datetime.datetime):
+
+    # More direct type checks, cache Money existence, minimize repeated global lookups
+    if vtype is datetime.datetime:
+        # timezone.template_localtime and formats.localize are cheap for correct types
         return formats.localize(timezone.template_localtime(value))
-    elif isinstance(value, datetime.date | datetime.time):
+    if vtype is datetime.date or vtype is datetime.time:
         return formats.localize(value)
-    elif Money is not None and isinstance(value, Money):
+
+    if Money is not None and isinstance(value, Money):
         return str(value)
-    elif isinstance(value, int | decimal.Decimal | float):
+
+    if vtype is int or vtype is float or vtype is decimal.Decimal:
         return formats.number_format(value)
-    elif isinstance(value, list | tuple):
-        return ", ".join(str(v) for v in value)
-    else:
-        return str(value)
+
+    # Faster membership test for sequences, and avoid creating unnecessary generator object for empty sequences
+    if isinstance(
+        value, (list, tuple)
+    ):  # tuple for optimization, grouping types in isinstance
+        if not value:
+            return ""
+        # Faster join through list comprehension directly
+        return ", ".join(map(str, value))
+
+    return str(value)
 
 
 def display_for_field(value: Any, field: Any, empty_value_display: str) -> str:

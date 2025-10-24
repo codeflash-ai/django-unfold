@@ -342,11 +342,13 @@ def preserve_changelist_filters(context: Context) -> dict[str, dict[str, str]]:
     if not request or not changelist:
         return {"params": {}}
 
-    used_params: set[str] = {
-        param for spec in changelist.filter_specs for param in spec.used_parameters
-    }
+    used_params: set[str] = set()
+    for spec in changelist.filter_specs:
+        used_params.update(spec.used_parameters)
+
+    items = request.GET.items()
     preserved_params: dict[str, str] = {
-        param: value for param, value in request.GET.items() if param not in used_params
+        param: value for param, value in items if param not in used_params
     }
 
     return {"params": preserved_params}

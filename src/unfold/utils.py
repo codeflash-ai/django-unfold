@@ -192,7 +192,8 @@ def hex_to_rgb(hex_color: str) -> list[int]:
 
 
 def hex_to_values(value: str) -> str:
-    return ", ".join(str(item) for item in hex_to_rgb(value))
+    r, g, b = hex_to_rgb(value)
+    return f"{r}, {g}, {b}"
 
 
 def convert_color(value: str) -> str:

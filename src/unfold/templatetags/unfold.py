@@ -316,13 +316,16 @@ def do_component(parser: Parser, token: Token) -> str:
 
 @register.filter
 def add_css_class(field: Field, classes: list | tuple) -> Field:
-    if type(classes) in (list, tuple):
+    # Use isinstance for better performance and extensibility over type() check
+    if isinstance(classes, (list, tuple)):
         classes = " ".join(classes)
 
-    if "class" in field.field.widget.attrs:
-        field.field.widget.attrs["class"] += f" {classes}"
+    attrs = field.field.widget.attrs
+    class_attr = attrs.get("class")
+    if class_attr is not None:
+        attrs["class"] = f"{class_attr} {classes}"
     else:
-        field.field.widget.attrs["class"] = classes
+        attrs["class"] = classes
 
     return field
 

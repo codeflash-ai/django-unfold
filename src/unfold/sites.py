@@ -437,34 +437,41 @@ class UnfoldAdminSite(AdminSite):
         return links
 
     def get_tabs_list(self, request: HttpRequest) -> list[dict[str, Any]]:
-        tabs = copy.deepcopy(self._get_config("TABS", request))
-
+        # Avoid deep copy for immutable/config data, do shallow copy for dicts if needed
+        tabs = self._get_config("TABS", request)
         if not tabs:
             return []
 
-        for tab in tabs:
-            allowed_items = []
+        # The config is typically from settings, so we need to avoid mutating it
+        result_tabs = []
 
-            for item in tab["items"]:
-                item["has_permission"] = self._call_permission_callback(
-                    item.get("permission"), request
+        for tab in tabs:
+            # only shallow copy tab/items list, not each item which is processed below
+            new_tab = tab.copy()
+            items = new_tab.get("items", [])
+            allowed_items = []
+            for item in items:
+                # Work on a copy to avoid accidental mutation of global config
+                new_item = item.copy()
+                new_item["has_permission"] = self._call_permission_callback(
+                    new_item.get("permission"), request
                 )
 
-                if isinstance(item["link"], Callable):
-                    item["link_callback"] = lazy(item["link"])(request)
+                if isinstance(new_item["link"], Callable):
+                    new_item["link_callback"] = lazy(new_item["link"])(request)
 
-                if "active" not in item:
-                    item["active"] = self._get_is_active(
-                        request, item.get("link_callback") or item["link"], True
+                if "active" not in new_item:
+                    new_item["active"] = self._get_is_active(
+                        request, new_item.get("link_callback") or new_item["link"], True
                     )
                 else:
-                    item["active"] = self._get_value(item["active"], request)
+                    new_item["active"] = self._get_value(new_item["active"], request)
 
-                allowed_items.append(item)
+                allowed_items.append(new_item)
+            new_tab["items"] = allowed_items
+            result_tabs.append(new_tab)
 
-            tab["items"] = allowed_items
-
-        return tabs
+        return result_tabs
 
     def _call_permission_callback(
         self, callback: str | Callable | None, request: HttpRequest
@@ -474,13 +481,15 @@ class UnfoldAdminSite(AdminSite):
 
         if isinstance(callback, str):
             try:
-                callback = import_string(callback)
+                callback_obj = import_string(callback)
             except ImportError:
-                pass
+                callback_obj = callback
+        else:
+            callback_obj = callback
 
-        if isinstance(callback, str) or isinstance(callback, Callable):
-            # We are not able to use here "is" because type is lazy loaded function
-            if lazy(callback)(request) == True:  # noqa: E712
+        # We are not able to use here "is" because type is lazy loaded function
+        if isinstance(callback_obj, Callable) or isinstance(callback_obj, str):
+            if lazy(callback_obj)(request) == True:  # noqa: E712
                 return True
 
         return False
@@ -512,10 +521,12 @@ class UnfoldAdminSite(AdminSite):
             request_params = parse_qs(request.GET.urlencode())
 
             # In case of tabs, we need to check if the query params are the same
-            if is_tab and not all(
-                request_params.get(k) == v for k, v in query_params.items()
-            ):
-                return False
+            if is_tab:
+                # Short-circuit for empty params (most common case)
+                if not query_params and not request_params:
+                    pass  # Active
+                elif any(request_params.get(k) != v for k, v in query_params.items()):
+                    return False
 
             return True
 
@@ -545,10 +556,11 @@ class UnfoldAdminSite(AdminSite):
         return False
 
     def _get_config(self, key: str, *args) -> Any:
+        # cache get_config(self.settings_name) for this request if this is a hot path
         config = get_config(self.settings_name)
-
-        if key in config and config[key]:
-            return self._get_value(config[key], *args)
+        value = config.get(key)
+        if value:
+            return self._get_value(value, *args)
 
     def _get_theme_images(self, key: str, *args: Any) -> dict[str, str] | str | None:
         images = self._get_config(key, *args)

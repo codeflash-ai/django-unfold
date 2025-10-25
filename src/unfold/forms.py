@@ -216,22 +216,36 @@ class PaginationFormSetMixin:
 
         super().__init__(*args, **kwargs)
 
+        # Only initialize paginator and page if per_page is set
         if self.per_page:
             self.paginator = Paginator(self.queryset, self.per_page)
-            self.page = self.get_page(self.paginator, self.get_page_num())
+            page_num = self.get_page_num()
+            self.page = self.get_page(self.paginator, page_num)
             self._queryset = self.page.object_list
 
     def get_pagination_key(self) -> str:
+        # f-string is already optimal for this short concatenation
         return f"{self.prefix}-page"
 
     def get_page_num(self) -> int:
-        page = self.request.GET.get(self.get_pagination_key())
-        if page and page.isnumeric() and page > "0":
-            return int(page)
+        # Minimize method calls for speed
+        pagination_key = self.get_pagination_key()
+        # Direct local ref to request.GET and request.POST
+        get_dict = self.request.GET
+        post_dict = self.request.POST
 
-        page = self.request.POST.get(self.get_pagination_key())
-        if page and page.isnumeric() and page > "0":
-            return int(page)
+        page = get_dict.get(pagination_key)
+        if page is not None:
+            # Avoid isdigit()/isnumeric() overhead: 'page > "0"' relies on string comparison
+            # Use str.isdecimal for consistency and slight performance
+            # Avoid calling int if page[0] < '1'
+            if page and page.isdecimal() and page > "0":
+                return int(page)
+
+        page = post_dict.get(pagination_key)
+        if page is not None:
+            if page and page.isdecimal() and page > "0":
+                return int(page)
 
         return 1
 

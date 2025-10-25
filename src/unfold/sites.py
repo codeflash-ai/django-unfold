@@ -379,43 +379,54 @@ class UnfoldAdminSite(AdminSite):
         self, request: HttpRequest, items: list[dict], tabs: list[dict] = None
     ) -> list:
         allowed_items = []
+        # Localize references for speed in loop
+        append_allowed = allowed_items.append
+        _get_is_active = self._get_is_active
+        _get_navigation_items = self._get_navigation_items
+        _call_permission_callback = self._call_permission_callback
+        _get_is_tab_active = self._get_is_tab_active
+        _get_value = self._get_value
+        import_string_ = import_string
+        lazy_ = lazy
 
         for item in items:
             link = item.get("link")
 
             if "active" in item:
-                item["active"] = self._get_value(item["active"], request)
+                item["active"] = _get_value(item["active"], request)
             else:
-                item["active"] = self._get_is_active(
+                item["active"] = _get_is_active(
                     request, item.get("link_callback") or link
                 )
 
             # Checks if any tab item is active and then marks the sidebar link as active
-            if tabs and self._get_is_tab_active(request, tabs, link):
+            if tabs and _get_is_tab_active(request, tabs, link):
                 item["active"] = True
 
             # Link callback
             if isinstance(link, Callable):
-                item["link_callback"] = lazy(link)(request)
+                item["link_callback"] = lazy_(link)(request)
 
             # Permission callback
-            item["has_permission"] = self._call_permission_callback(
+            item["has_permission"] = _call_permission_callback(
                 item.get("permission"), request
             )
 
             # Badge callbacks
             if "badge" in item and isinstance(item["badge"], str):
                 try:
-                    callback = import_string(item["badge"])
-                    item["badge_callback"] = lazy(callback)(request)
+                    callback = import_string_(item["badge"])
+                    item["badge_callback"] = lazy_(callback)(request)
                 except ImportError:
                     pass
 
             # Process nested items
-            if "items" in item:
-                item["items"] = self._get_navigation_items(request, item["items"])
+            items_key = item.get("items")
+            if items_key is not None:
+                # Use the original, not potentially replaced key for correct behavior
+                item["items"] = _get_navigation_items(request, items_key)
 
-            allowed_items.append(item)
+            append_allowed(item)
 
         return allowed_items
 
@@ -472,14 +483,15 @@ class UnfoldAdminSite(AdminSite):
         if callback is None:
             return True
 
+        orig_callback = callback  # for type check after
         if isinstance(callback, str):
             try:
                 callback = import_string(callback)
             except ImportError:
                 pass
 
+        # Only call if callable or unchanged string
         if isinstance(callback, str) or isinstance(callback, Callable):
-            # We are not able to use here "is" because type is lazy loaded function
             if lazy(callback)(request) == True:  # noqa: E712
                 return True
 
@@ -497,19 +509,43 @@ class UnfoldAdminSite(AdminSite):
     def _get_is_active(
         self, request: HttpRequest, link: str | Callable, is_tab: bool = False
     ) -> bool:
+        # Avoid repeated reverse_lazy and parsing
         if not isinstance(link, str):
             link = str(link)
 
-        index_path = reverse_lazy(f"{self.name}:index")
+        # Only call reverse_lazy once per instance per name
+        # Per call performance boost via caching
+        name = self.name
+        # Since reverse_lazy is lazy and hashable, it's ok to cache
+        if (
+            not hasattr(self, "_index_path_cache")
+            or self._index_path_cache_name != name
+        ):
+            self._index_path_cache = reverse_lazy(f"{name}:index")
+            self._index_path_cache_name = name
+        index_path = self._index_path_cache
+
         link_path = urlparse(link).path
 
         # Dashboard
-        if link_path == request.path == index_path:
+        request_path = request.path
+        if link_path == request_path == index_path:
             return True
 
-        if link_path != "" and link_path in request.path and link_path != index_path:
-            query_params = parse_qs(urlparse(link).query)
-            request_params = parse_qs(request.GET.urlencode())
+        if link_path and (link_path in request_path) and (link_path != index_path):
+            query = urlparse(link).query
+            if query:
+                query_params = parse_qs(query)
+            else:
+                query_params = {}
+
+            # Django's request.GET is already a MultiValueDict (dict-like), but .urlencode() combines keys into a string
+            # parse_qs expects a query string, but 'request.GET.urlencode()' will do that
+            request_qstr = request.GET.urlencode()
+            if request_qstr:
+                request_params = parse_qs(request_qstr)
+            else:
+                request_params = {}
 
             # In case of tabs, we need to check if the query params are the same
             if is_tab and not all(
@@ -524,18 +560,20 @@ class UnfoldAdminSite(AdminSite):
     def _get_is_tab_active(
         self, request: HttpRequest, tabs: list[dict], link: str
     ) -> bool:
+        # Speed: localize methods and fields in inner loop
+        _get_is_active = self._get_is_active
         for tab in tabs:
             has_primary_link = False
             has_tab_link_active = False
+            tab_items = tab["items"]
 
-            for tab_item in tab["items"]:
-                if link == tab_item["link"]:
+            for tab_item in tab_items:
+                tab_link = tab_item["link"]
+                if link == tab_link:
                     has_primary_link = True
                     continue
 
-                if self._get_is_active(
-                    request, tab_item.get("link_callback") or tab_item["link"]
-                ):
+                if _get_is_active(request, tab_item.get("link_callback") or tab_link):
                     has_tab_link_active = True
                     continue
 
